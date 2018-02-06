@@ -1,5 +1,12 @@
 buildscript {
+  repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-release' }
+    maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-snapshot' }
+  }
   dependencies {
+    classpath "com.traiana.kit:gradle-grpc-gateway-plugin:$ver.kitGradle"
     classpath "com.traiana.kit:gradle-protobuf-plugin:$ver.kitGradle"
     classpath "com.diffplug.spotless:spotless-plugin-gradle:$ver.spotless"
   }

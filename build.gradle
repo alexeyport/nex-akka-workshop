@@ -6,7 +6,17 @@ buildscript {
   repositories {
     mavenLocal()
     mavenCentral()
+    maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-release' }
+    maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-snapshot' }
   }
+
+}
+
+repositories {
+  mavenLocal()
+  mavenCentral()
+  maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-release' }
+  maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-snapshot' }
 }
 
 def children = subprojects.findAll { it.childProjects.isEmpty() }
@@ -18,7 +28,18 @@ project.configure(children) { proj ->
     repositories {
       mavenLocal()
       mavenCentral()
+      maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-release' }
+      maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-snapshot' }
     }
+
+  }
+
+  repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-snapshot' }
+    maven { url 'http://artifactory-dev.traiana.com/artifactory/libs-release' }
+    maven { url 'https://dl.bintray.com/cakesolutions/maven/' }
   }
 
   apply plugin: 'maven'
