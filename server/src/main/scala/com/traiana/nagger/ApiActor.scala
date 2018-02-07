@@ -15,9 +15,14 @@ import scala.concurrent.duration._
 /**
   * Created by alexp on 1/29/18.
   */
-case class RegistrationResult(origSender: ActorRef, origMessage: ResponseResult, regReq: RegisterRequest)
-case class StartListening(request: ListenRequest, responseObserver: StreamObserver[ListenEvent])
-case class UpdateMapN(nick: String, so: StreamObserver[ListenEvent])
+object ApiActorReqs {
+  case class RegistrationResult(origSender: ActorRef,
+                                origMessage: LoginActorResp.ResponseResult,
+                                regReq: RegisterRequest)
+  case class StartListening(request: ListenRequest, responseObserver: StreamObserver[ListenEvent])
+  case class UpdateMapN(nick: String, so: StreamObserver[ListenEvent])
+
+}
 
 class ApiActor extends Actor with ActorLogging {
   val udActor = context.actorOf(Props[UserDetailsActor], "udactor")
@@ -32,42 +37,42 @@ class ApiActor extends Actor with ActorLogging {
 
   def receive = {
     case rr: RegisterRequest => {
-      log.info(s"----> In ApiActor RegisterRequest $rr")
+      log.info(s"----------> In ApiActor RegisterRequest $rr")
       val oS = sender()
-      (udActor ? UserDetailsReq(rr.username, rr.password, rr.nickname))
-        .mapTo[ResponseResult]
-        .map(res => RegistrationResult(oS, res, rr))
+      (udActor ? UserDetailsActorReq.UserDetailsReq(rr.username, rr.password, rr.nickname))
+        .mapTo[LoginActorResp.ResponseResult]
+        .map(res => ApiActorReqs.RegistrationResult(oS, res, rr))
         .pipeTo(self)
     }
 
-    case rr: RegistrationResult => {
-      log.info(s"----> In ApiActor RegistrationResult $rr")
+    case rr: ApiActorReqs.RegistrationResult => {
+      log.info(s"----------> In ApiActor RegistrationResult $rr")
       rr.origMessage match {
-        case s: LoginRegSuccessResp => {
-          (loginActor ? LoginUserReq(rr.regReq.username, rr.regReq.password))
-            .mapTo[ResponseResult]
+        case s: LoginActorResp.LoginRegSuccessResp => {
+          (loginActor ? LoginActorReq.LoginUserReq(rr.regReq.username, rr.regReq.password))
+            .mapTo[LoginActorResp.ResponseResult]
             .map {
-              case ls: LoginRegSuccessResp =>
+              case ls: LoginActorResp.LoginRegSuccessResp =>
                 LoginRegisterResponse().withSuccess(LoginSuccess().withToken(ls.res))
-              case lf: LoginRegFailureResp =>
+              case lf: LoginActorResp.LoginRegFailureResp =>
                 LoginRegisterResponse().withFailure(LoginFailure(lf.message))
             }
             .pipeTo(rr.origSender)
         }
-        case f: LoginRegFailureResp => rr.origSender ! f
+        case f: LoginActorResp.LoginRegFailureResp => rr.origSender ! f
       }
     }
 
     case lr: LoginRequest => {
-      log.info(s"----> In ApiActor LoginRequest $lr")
-      (loginActor ? LoginUserReq(lr.username, lr.password))
-        .mapTo[ResponseResult]
+      log.info(s"----------> In ApiActor LoginRequest $lr")
+      (loginActor ? LoginActorReq.LoginUserReq(lr.username, lr.password))
+        .mapTo[LoginActorResp.ResponseResult]
         .map {
-          case ls: LoginRegSuccessResp => {
+          case ls: LoginActorResp.LoginRegSuccessResp => {
             log.info(ls.res)
             LoginRegisterResponse().withSuccess(LoginSuccess().withToken(ls.res))
           }
-          case lf: LoginRegFailureResp => {
+          case lf: LoginActorResp.LoginRegFailureResp => {
             log.error(lf.message)
             LoginRegisterResponse().withFailure(LoginFailure(lf.message))
           }
@@ -76,72 +81,79 @@ class ApiActor extends Actor with ActorLogging {
     }
 
     case jlr: JoinLeaveRequest => {
-      log.info(s"----> In ApiActor JoinLeaveRequest ${jlr.joinNotLeave} + ${jlr.channel}")
+      log.info(s"----------> In ApiActor JoinLeaveRequest ${jlr.joinNotLeave} + ${jlr.channel}")
       val oS = sender()
-      (loginActor ? GetUserNickByToken(jlr.token))
-        .mapTo[ResponseResult]
+      (loginActor ? LoginActorReq.GetUserNickByToken(jlr.token))
+        .mapTo[LoginActorResp.ResponseResult]
         .map {
-          case ls: LoginRegSuccessResp => {
-            log.info(s"----> In ApiActor JoinLeaveRequest ${ls.res} - ${jlr.channel} - ${jlr.joinNotLeave}")
-            chanManActor ! JoinLeveChannel(ls.res, jlr.channel, jlr.joinNotLeave)
-            oS ! Empty
+          case ls: LoginActorResp.LoginRegSuccessResp => {
+            log.info(s"----------> In ApiActor JoinLeaveRequest ${ls.res} - ${jlr.channel} - ${jlr.joinNotLeave}")
+            chanManActor ! ChannelManagerActorReq.JoinLeveChannel(ls.res, jlr.channel, jlr.joinNotLeave, oS)
           }
-          case lf: LoginRegFailureResp => {
+          case lf: LoginActorResp.LoginRegFailureResp => {
             log.error(lf.message)
             oS ! Empty
           }
         }
+    }
+
+    // Send to my self after join in order to get the history for a channel if exists
+    case jlr: ChannelManagerActorResp.JoinLeveChannelResp => {
+      log.info(s"----------> In ApiActor ChannelManagerActorResp updating history for nick : ${jlr.nick}")
+      jlr.list.foreach(res => updateSO(res, jlr.channel, jlr.nick, jlr.nick))
+      jlr.oS ! Empty
     }
 
     case mr: MessageRequest => {
-      log.info(s"----> In ApiActor MessageRequest ${mr.token} + ${mr.channel}")
+      log.info(s"----------> In ApiActor MessageRequest ${mr.token} + ${mr.channel}")
 
       val oS = sender()
-      (loginActor ? GetUserNickByToken(mr.token))
-        .mapTo[ResponseResult]
+      (loginActor ? LoginActorReq.GetUserNickByToken(mr.token))
+        .mapTo[LoginActorResp.ResponseResult]
         .map {
-          case ls: LoginRegSuccessResp => {
-            log.info(s"----> In ApiActor MessageRequest ${ls.res}")
-            chanManActor ! PostMessageReq(mr.message, mr.channel, ls.res)
+          case ls: LoginActorResp.LoginRegSuccessResp => {
+            log.info(s"----------> In ApiActor MessageRequest ${ls.res}")
+            chanManActor ! ChannelManagerActorReq.PostMessageReq(mr.message, mr.channel, ls.res, oS)
             oS ! Empty
           }
-          case lf: LoginRegFailureResp => {
+          case lf: LoginActorResp.LoginRegFailureResp => {
             log.error(lf.message)
             oS ! Empty
           }
         }
     }
 
-    case pmr: PostMessageResp => {
-      pmr.nicks.foreach { res =>
-        val tt = Instant.now
-        val le = new ListenEvent(pmr.channel,
-                                 pmr.nick,
-                                 pmr.message,
-                                 Some(Timestamp().withSeconds(tt.getEpochSecond).withNanos(tt.getNano)))
-        user2SO.get(res) match {
-          case Some(value) => value.onNext(le)
-          case None        => Nil
-        }
-      }
+    case pmr: ChannelManagerActorResp.PostMessageResp => {
+      pmr.nicks.foreach(res => updateSO(pmr.message, pmr.channel, res, pmr.nick))
     }
 
-    case lr: StartListening => {
-      (loginActor ? GetUserNickByToken(lr.request.token))
-        .mapTo[ResponseResult]
+    case lr: ApiActorReqs.StartListening => {
+      (loginActor ? LoginActorReq.GetUserNickByToken(lr.request.token))
+        .mapTo[LoginActorResp.ResponseResult]
         .map {
-          case ls: LoginRegSuccessResp => {
-            log.info(s"--> Adding mapping between Nick ${ls.res} and ${lr.responseObserver}")
-            self ! UpdateMapN(ls.res, lr.responseObserver)
+          case ls: LoginActorResp.LoginRegSuccessResp => {
+            log.info(s"---------->  Adding mapping between Nick ${ls.res} and ${lr.responseObserver}")
+            self ! ApiActorReqs.UpdateMapN(ls.res, lr.responseObserver)
           }
-          case lf: LoginRegFailureResp => {
+          case lf: LoginActorResp.LoginRegFailureResp => {
             log.error(lf.message)
           }
         }
     }
 
-    case umn: UpdateMapN => {
+    case umn: ApiActorReqs.UpdateMapN => {
       user2SO += (umn.nick -> umn.so)
+    }
+  }
+
+  def updateSO(message: String, channel: String, nick: String, sender: String): Unit = {
+    val tt = Instant.now
+    val le =
+      new ListenEvent(channel, sender, message, Some(Timestamp().withSeconds(tt.getEpochSecond).withNanos(tt.getNano)))
+
+    user2SO.get(nick) match {
+      case Some(value) => value.onNext(le)
+      case None        => Nil
     }
   }
 

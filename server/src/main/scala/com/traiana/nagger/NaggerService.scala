@@ -35,5 +35,5 @@ class NaggerService extends NaggerGrpc.Nagger with BindableService {
   override def sendMessage(request: MessageRequest): Future[Empty] = (apiActor ? request).mapTo[Empty]
 
   override def listen(request: ListenRequest, responseObserver: StreamObserver[ListenEvent]): Unit =
-    apiActor ! StartListening(request, responseObserver)
+    apiActor ! ApiActorReqs.StartListening(request, responseObserver)
 }

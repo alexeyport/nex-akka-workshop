@@ -11,12 +11,17 @@ import scala.concurrent.duration._
 /**
   * Created by alexp on 1/29/18.
   */
-case class LoginUserReq(user: String, password: String)
-case class GetUserNickByToken(token: String)
+object LoginActorReq{
+  case class LoginUserReq(user: String, password: String)
+  case class GetUserNickByToken(token: String)
 
-trait ResponseResult
-case class LoginRegSuccessResp(res: String)     extends ResponseResult
-case class LoginRegFailureResp(message: String) extends ResponseResult
+}
+
+object LoginActorResp {
+  trait ResponseResult
+  case class LoginRegSuccessResp(res: String)     extends ResponseResult
+  case class LoginRegFailureResp(message: String) extends ResponseResult
+}
 
 case class UpdateMap(originalSender: ActorRef, nick: String)
 
@@ -30,26 +35,26 @@ class LoginActor(udActor: ActorRef) extends Actor with ActorLogging {
   implicit val timeout = Timeout(10 seconds)
 
   def receive = {
-    case lin: LoginUserReq =>
-      log.info(s"----> In LoginActor $lin")
+    case lin: LoginActorReq.LoginUserReq =>
+      log.info(s"---------->  In LoginActor $lin")
       val oS = sender()
-      (udActor ? CheckUserReq(lin.user, lin.password))
-        .mapTo[ResponseResult]
+      (udActor ? UserDetailsActorReq.CheckUserReq(lin.user, lin.password))
+        .mapTo[LoginActorResp.ResponseResult]
         .map {
-          case ls: LoginRegSuccessResp => self ! UpdateMap(oS, ls.res)
-          case lf: LoginRegFailureResp => oS ! lf
+          case ls: LoginActorResp.LoginRegSuccessResp => self ! UpdateMap(oS, ls.res)
+          case lf: LoginActorResp.LoginRegFailureResp => oS ! lf
         }
 
     case um: UpdateMap => {
       val token = UUID.randomUUID().toString
       userDets += (token -> um.nick) //in this case res is a token
-      um.originalSender ! LoginRegSuccessResp(token)
+      um.originalSender ! LoginActorResp.LoginRegSuccessResp(token)
     }
 
-    case gunbt: GetUserNickByToken =>
+    case gunbt: LoginActorReq.GetUserNickByToken =>
       userDets.get(gunbt.token) match {
-        case Some(value) => sender() ! LoginRegSuccessResp(value)
-        case None        => sender() ! LoginRegFailureResp("No user for this token")
+        case Some(value) => sender() ! LoginActorResp.LoginRegSuccessResp(value)
+        case None        => sender() ! LoginActorResp.LoginRegFailureResp("No user for this token")
       }
 
   }
