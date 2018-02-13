@@ -1,9 +1,13 @@
 package com.traiana.nagger
 
-import akka.actor.{ActorLogging, ActorRef, Props}
+import akka.actor.SupervisorStrategy.Stop
+import akka.actor.{ActorLogging, ActorRef, Props, ReceiveTimeout}
 import akka.persistence.PersistentActor
 
+import scala.concurrent.duration._
+
 object ChannelActorReqs {
+  final case class EntityEnvelope(id: String, payload: Any)
   case class JoinChannel(nick: String)
   case class LeaveChannel(nick: String)
   case class GetNicksPerChannelReq(oS: ActorRef, message: String, nick: String)
@@ -22,11 +26,13 @@ object ChannelActorResps {
   case class GetMessageListResp(list: List[String])
 }
 
-object ChannelActor {
-  def props(acName: String): Props = Props(new ChannelActor(acName))
-}
-class ChannelActor(acName: String) extends PersistentActor with ActorLogging {
-  override def persistenceId = s"ChannelActor-ID-$acName"
+class ChannelActor extends PersistentActor with ActorLogging {
+  import akka.cluster.sharding.ShardRegion.Passivate
+
+  //context.setReceiveTimeout(120.seconds)
+
+  override def persistenceId = s"ChannelActor-ID-${self.path.name}"
+  log.info(s"************************ ChannelActor persistenceId: $persistenceId")
 
   val usersPerChannel   = scala.collection.mutable.ListBuffer[String]()
   val mesagesPerChannel = scala.collection.mutable.ListBuffer[String]()
@@ -79,13 +85,15 @@ class ChannelActor(acName: String) extends PersistentActor with ActorLogging {
                                                             jnpc.oS,
                                                             jnpc.message,
                                                             jnpc.nick,
-                                                            acName)
+                                                            self.path.name)
       }
     }
 
-    case ChannelActorReqs.GetMesasgeList =>{
+    case ChannelActorReqs.GetMesasgeList => {
       sender() ! ChannelActorResps.GetMessageListResp(mesagesPerChannel.toList)
     }
 
+    case ReceiveTimeout ⇒ context.parent ! Passivate(stopMessage = Stop)
+    case Stop           ⇒ context.stop(self)
   }
 }

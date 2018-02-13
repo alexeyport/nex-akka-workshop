@@ -9,7 +9,7 @@ import akka.persistence.PersistentActor
 object UserDetailsActorReq{
   case class UserDetailsReq(user: String, password: String, nickName: String)
   case class CheckUserReq(user: String, password: String)
-
+  case object End
 }
 
 object UserDetailsActorEvt {

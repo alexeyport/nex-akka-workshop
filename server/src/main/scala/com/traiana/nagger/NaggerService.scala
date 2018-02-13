@@ -1,10 +1,12 @@
 package com.traiana.nagger
 
 import akka.actor.{Actor, ActorSystem, Props}
+import akka.cluster.singleton.{ClusterSingletonManager, ClusterSingletonManagerSettings}
 import akka.pattern.ask
 import akka.util.Timeout
 import com.google.protobuf.empty.Empty
 import com.traiana.kit.boot.grpc.GrpcService
+import com.traiana.nagger.UserDetailsActorReq.End
 import com.traiana.nagger.spb._
 import io.grpc.stub.StreamObserver
 import io.grpc.{BindableService, ServerServiceDefinition}
@@ -19,6 +21,16 @@ import scala.concurrent.duration._
 class NaggerService extends NaggerGrpc.Nagger with BindableService {
   val system   = ActorSystem("NaggerActor")
   val apiActor = system.actorOf(Props[ApiActor], "apiactor")
+
+  system.actorOf(ClusterSingletonManager.props(singletonProps = Props(classOf[UserDetailsActor]),
+                                               terminationMessage = UserDetailsActorReq.End,
+                                               settings = ClusterSingletonManagerSettings(system)),
+                 name = "udactor")
+
+  system.actorOf(ClusterSingletonManager.props(singletonProps = Props(classOf[ChannelManagerActor]),
+                                               terminationMessage = ChannelManagerActorReq.End,
+                                               settings = ClusterSingletonManagerSettings(system)),
+                 name = "chanmanactor")
 
   implicit val timeout = Timeout(10 seconds)
 

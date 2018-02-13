@@ -3,6 +3,7 @@ package com.traiana.nagger
 import java.time.Instant
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.cluster.singleton.{ClusterSingletonProxy, ClusterSingletonProxySettings}
 import akka.pattern.{ask, pipe}
 import akka.util.Timeout
 import com.google.protobuf.empty.Empty
@@ -25,10 +26,21 @@ object ApiActorReqs {
 }
 
 class ApiActor extends Actor with ActorLogging {
-  val udActor = context.actorOf(Props[UserDetailsActor], "udactor")
+
+  val proxyUserDet = context.actorOf(ClusterSingletonProxy.props(singletonManagerPath = "/user/udactor",
+                                                                 settings =
+                                                                   ClusterSingletonProxySettings(context.system)),
+                                     name = "proxyUserDet")
+
+  val proxyChanMan = context.actorOf(ClusterSingletonProxy.props(singletonManagerPath = "/user/chanmanactor",
+                                                                 settings =
+                                                                   ClusterSingletonProxySettings(context.system)),
+                                     name = "proxyChanMan")
+
+  proxyChanMan ! ChannelManagerActorReq.UpdateApiActorSet(self)
+
   val loginActor =
-    context.actorOf(LoginActor.props(udActor), name = "loginactor")
-  val chanManActor = context.actorOf(Props[ChannelManagerActor], "chanmanactor")
+    context.actorOf(LoginActor.props(proxyUserDet), name = "loginactor")
 
   val user2SO = scala.collection.mutable.Map[String, StreamObserver[ListenEvent]]()
 
@@ -39,7 +51,7 @@ class ApiActor extends Actor with ActorLogging {
     case rr: RegisterRequest => {
       log.info(s"----------> In ApiActor RegisterRequest $rr")
       val oS = sender()
-      (udActor ? UserDetailsActorReq.UserDetailsReq(rr.username, rr.password, rr.nickname))
+      (proxyUserDet ? UserDetailsActorReq.UserDetailsReq(rr.username, rr.password, rr.nickname))
         .mapTo[LoginActorResp.ResponseResult]
         .map(res => ApiActorReqs.RegistrationResult(oS, res, rr))
         .pipeTo(self)
@@ -88,7 +100,7 @@ class ApiActor extends Actor with ActorLogging {
         .map {
           case ls: LoginActorResp.LoginRegSuccessResp => {
             log.info(s"----------> In ApiActor JoinLeaveRequest ${ls.res} - ${jlr.channel} - ${jlr.joinNotLeave}")
-            chanManActor ! ChannelManagerActorReq.JoinLeveChannel(ls.res, jlr.channel, jlr.joinNotLeave, oS)
+            proxyChanMan ! ChannelManagerActorReq.JoinLeveChannel(ls.res, jlr.channel, jlr.joinNotLeave, oS)
           }
           case lf: LoginActorResp.LoginRegFailureResp => {
             log.error(lf.message)
@@ -113,7 +125,7 @@ class ApiActor extends Actor with ActorLogging {
         .map {
           case ls: LoginActorResp.LoginRegSuccessResp => {
             log.info(s"----------> In ApiActor MessageRequest ${ls.res}")
-            chanManActor ! ChannelManagerActorReq.PostMessageReq(mr.message, mr.channel, ls.res, oS)
+            proxyChanMan ! ChannelManagerActorReq.PostMessageReq(mr.message, mr.channel, ls.res, oS)
             oS ! Empty
           }
           case lf: LoginActorResp.LoginRegFailureResp => {
