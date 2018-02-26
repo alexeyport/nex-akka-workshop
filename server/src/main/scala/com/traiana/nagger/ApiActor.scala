@@ -3,11 +3,13 @@ package com.traiana.nagger
 import java.time.Instant
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings, ShardRegion}
 import akka.cluster.singleton.{ClusterSingletonProxy, ClusterSingletonProxySettings}
 import akka.pattern.{ask, pipe}
 import akka.util.Timeout
 import com.google.protobuf.empty.Empty
 import com.google.protobuf.timestamp.Timestamp
+import com.traiana.nagger.ChannelActorReqs.EntityEnvelope
 import com.traiana.nagger.spb._
 import io.grpc.stub.StreamObserver
 
@@ -38,6 +40,26 @@ class ApiActor extends Actor with ActorLogging {
                                      name = "proxyChanMan")
 
   proxyChanMan ! ChannelManagerActorReq.UpdateApiActorSet(self)
+
+  val extractEntityId: ShardRegion.ExtractEntityId = {
+    case EntityEnvelope(id, payload) => (id.toString, payload)
+  }
+
+  val numberOfShards = 10
+
+  val extractShardId: ShardRegion.ExtractShardId = {
+    case EntityEnvelope(id, _) => (id.hashCode % numberOfShards).toString
+    case ShardRegion.StartEntity(id) =>
+      (id.hashCode % numberOfShards).toString
+  }
+
+  val channelActorRegion: ActorRef = ClusterSharding(context.system).start(
+    typeName = "ChannelActor",
+    entityProps = Props[ChannelActor],
+    settings = ClusterShardingSettings(context.system),
+    extractEntityId = extractEntityId,
+    extractShardId = extractShardId)
+
 
   val loginActor =
     context.actorOf(LoginActor.props(proxyUserDet), name = "loginactor")

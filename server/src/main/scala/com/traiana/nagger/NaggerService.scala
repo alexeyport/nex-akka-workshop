@@ -22,6 +22,7 @@ class NaggerService extends NaggerGrpc.Nagger with BindableService {
   val system   = ActorSystem("NaggerActor")
   val apiActor = system.actorOf(Props[ApiActor], "apiactor")
 
+
   system.actorOf(ClusterSingletonManager.props(singletonProps = Props(classOf[UserDetailsActor]),
                                                terminationMessage = UserDetailsActorReq.End,
                                                settings = ClusterSingletonManagerSettings(system)),

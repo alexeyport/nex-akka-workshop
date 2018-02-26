@@ -30,25 +30,9 @@ class ChannelManagerActor extends Actor with ActorLogging {
 
   val apiActorSet = scala.collection.mutable.Set[ActorRef]()
 
-  val extractEntityId: ShardRegion.ExtractEntityId = {
-    case EntityEnvelope(id, payload) => (id.toString, payload)
-  }
+  val channelActorRegion:ActorRef = ClusterSharding(context.system).shardRegion("ChannelActor")
 
-  val numberOfShards = 10
-
-  val extractShardId: ShardRegion.ExtractShardId = {
-    case EntityEnvelope(id, _) => (id.size % numberOfShards).toString
-    case ShardRegion.StartEntity(id) =>
-      (id.size % numberOfShards).toString
-  }
-
-  val channelActorRegion: ActorRef = ClusterSharding(context.system).start(
-    typeName = "ChannelActor",
-    entityProps = Props[ChannelActor],
-    settings = ClusterShardingSettings(context.system),
-    extractEntityId = extractEntityId,
-    extractShardId = extractShardId)
-
+  val tem="a"
   //val channelActorRegion: ActorRef = ClusterSharding(context.system).shardRegion("ChannelActor")
 
   def receive: Receive = {
